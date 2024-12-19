@@ -2,7 +2,7 @@ const quotePlaceHolder = document.querySelector(".title");
 const newQuoteButton = document.getElementById('new-quote');
 let intervalId;
 
-const URL = "http://api.quotable.io/quotes/random";
+const URL = 'https://api.quotable.io/random';
 const updateTime = 10000;
 
 // Add loading state
@@ -147,21 +147,17 @@ const loadMoreQuotes = async () => {
         
         const data = await response.json();
         const gridContainer = document.querySelector('.grid-container');
-        const fragment = document.createDocumentFragment();
         
         data.forEach(quote => {
             const card = createQuoteCard(quote.content, quote.author);
-            fragment.appendChild(card);
+            gridContainer.appendChild(card);
         });
         
-        gridContainer.appendChild(fragment);
         totalLoadedQuotes += data.length;
         
-        // Update button state
-        loadMoreBtn.disabled = false;
-        loadMoreBtn.textContent = totalLoadedQuotes >= MAX_QUOTES ? 'All Quotes Loaded' : 'Load More Quotes';
-        
         if (totalLoadedQuotes >= MAX_QUOTES) {
+            loadMoreBtn.textContent = 'All Quotes Loaded';
+            loadMoreBtn.disabled = true;
             loadMoreBtn.classList.add('disabled');
         }
     } catch (error) {
@@ -169,7 +165,9 @@ const loadMoreQuotes = async () => {
         loadMoreBtn.textContent = 'Error - Try Again';
     } finally {
         loadMoreBtn.classList.remove('loading');
-        loadMoreBtn.disabled = false;
+        if (!loadMoreBtn.classList.contains('disabled')) {
+            loadMoreBtn.disabled = false;
+        }
     }
 };
 
