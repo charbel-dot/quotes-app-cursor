@@ -2,7 +2,7 @@ const quotePlaceHolder = document.querySelector(".title");
 const newQuoteButton = document.getElementById('new-quote');
 let intervalId;
 
-const URL = "https://api.quotable.io/quotes/random";
+const URL = "http://api.quotable.io/quotes/random";
 const updateTime = 10000;
 
 // Add loading state
