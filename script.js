@@ -2,7 +2,8 @@ const quotePlaceHolder = document.querySelector(".title");
 const newQuoteButton = document.getElementById('new-quote');
 let intervalId;
 
-const URL = 'https://api.quotable.io/quotes/random';
+const URL = 'https://api.api-ninjas.com/v1/quotes';
+const API_KEY = 'MvIk+FgnfOK2cbcQrPbtEw==sVOpW5OgxOuoQL3Z';
 const updateTime = 10000;
 
 // Constants and configurations
@@ -53,6 +54,7 @@ document.addEventListener('mousemove', handleMouseMove, { passive: true });
 // Improved fetch with async/await and error handling
 const fetchData = async () => {
   const quotePlaceHolder = document.querySelector(".title");
+  const gridContainer = document.querySelector('.grid-container');
   
   try {
     setLoading(true);
@@ -60,8 +62,12 @@ const fetchData = async () => {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     
     const response = await fetch(URL, { 
+      method: 'GET',
       signal: controller.signal,
-      headers: { 'Accept': 'application/json' }
+      headers: { 
+        'X-Api-Key': API_KEY,
+        'Content-Type': 'application/json'
+      }
     });
     
     clearTimeout(timeoutId);
@@ -69,7 +75,24 @@ const fetchData = async () => {
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     
     const data = await response.json();
-    showData(data);
+    if (Array.isArray(data) && data.length > 0) {
+      // Set the first quote in the title area
+      quotePlaceHolder.textContent = data[0].quote;
+      
+      // Create cards for all quotes
+      const fragment = document.createDocumentFragment();
+      data.forEach(quoteData => {
+        if (quoteData && quoteData.quote) {
+          const card = createQuoteCard(quoteData);
+          fragment.appendChild(card);
+        }
+      });
+      
+      gridContainer.appendChild(fragment);
+      totalLoadedQuotes += data.length;
+    } else {
+      quotePlaceHolder.textContent = "No quote available";
+    }
   } catch (error) {
     console.error("Failed to fetch quote:", error);
     quotePlaceHolder.textContent = "Failed to load quote. Please try again later.";
@@ -79,7 +102,11 @@ const fetchData = async () => {
 };
 
 const showData = (data) => {
-  const randomQuote = data[0]?.content || "No quote available";
+  if (!Array.isArray(data) || !data.length) {
+    quotePlaceHolder.textContent = "No quote available";
+    return;
+  }
+  const randomQuote = data[0]?.quote || "No quote available";
   quotePlaceHolder.textContent = randomQuote;
 };
 
@@ -302,7 +329,7 @@ const fetchQuote = async () => {
 };
 
 // Enhanced load more quotes function
-let loadMoreQuotes = async () => {
+const loadMoreQuotes = async () => {
     const loadMoreBtn = document.getElementById('load-more');
     const gridContainer = document.querySelector('.grid-container');
     
@@ -316,8 +343,13 @@ let loadMoreQuotes = async () => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
-        const response = await fetch(`${URL}?limit=${QUOTES_PER_LOAD}`, {
-            signal: controller.signal
+        const response = await fetch(URL, {
+            method: 'GET',
+            signal: controller.signal,
+            headers: {
+                'X-Api-Key': API_KEY,
+                'Content-Type': 'application/json'
+            }
         });
         clearTimeout(timeoutId);
         
@@ -328,9 +360,9 @@ let loadMoreQuotes = async () => {
         
         const fragment = document.createDocumentFragment();
         
-        data.forEach(quote => {
-            if (quote && quote.content) {
-                const card = createQuoteCard(quote.content, quote.author);
+        data.forEach(quoteData => {
+            if (quoteData && quoteData.quote) {
+                const card = createQuoteCard(quoteData);
                 fragment.appendChild(card);
             }
         });
@@ -384,11 +416,10 @@ const initializeApp = async () => {
 };
 
 // Create quote card with optimized event handling
-const createQuoteCard = (quote, author) => {
+const createQuoteCard = (quoteData) => {
     const card = document.createElement('div');
     card.className = 'grid-card';
     
-    // Sanitize content
     const sanitizeHTML = (str) => {
         const div = document.createElement('div');
         div.textContent = str;
@@ -396,27 +427,11 @@ const createQuoteCard = (quote, author) => {
     };
     
     card.innerHTML = `
-        <p class="quote-text">${sanitizeHTML(quote)}</p>
-        <p class="quote-author">- ${sanitizeHTML(author || 'Unknown')}</p>
+        <div class="quote-content">
+            <p class="quote-text">${sanitizeHTML(quoteData.quote)}</p>
+            <p class="quote-author">- ${sanitizeHTML(quoteData.author || 'Unknown')}</p>
+        </div>
     `;
-    
-    // Add touch/mouse handling
-    const handleInteraction = (e) => {
-        const rect = card.getBoundingClientRect();
-        const x = (e.clientX || e.touches[0].clientX) - rect.left;
-        const y = (e.clientY || e.touches[0].clientY) - rect.top;
-        
-        requestAnimationFrame(() => {
-            card.style.setProperty('--mouse-x', `${x}px`);
-            card.style.setProperty('--mouse-y', `${y}px`);
-        });
-    };
-    
-    if ('ontouchstart' in window) {
-        card.addEventListener('touchstart', handleInteraction, { passive: true });
-    } else {
-        card.addEventListener('mousemove', debounce(handleInteraction, 16));
-    }
     
     return card;
 };
@@ -444,3 +459,13 @@ if (loadMoreBtn) {
 window.addEventListener('unload', () => {
     // Clean up any resources or event listeners if needed
 });
+
+// Add this cleanup function
+const cleanup = () => {
+    if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+    }
+};
+
+window.addEventListener('unload', cleanup);
