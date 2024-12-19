@@ -2,8 +2,16 @@ const quotePlaceHolder = document.querySelector(".title");
 const newQuoteButton = document.getElementById('new-quote');
 let intervalId;
 
-const URL = 'https://api.quotable.io/random';
+const URL = 'https://api.quotable.io/quotes/random';
 const updateTime = 10000;
+
+// Constants and configurations
+const QUOTES_PER_LOAD = 6; // Number of quotes to fetch per API call
+const MAX_QUOTES = 24; // Maximum number of quotes to display
+const RETRY_DELAY = 1000; // Delay between retries in milliseconds
+const MAX_RETRIES = 3; // Maximum number of retry attempts
+let totalLoadedQuotes = 0;
+let isLoading = false;
 
 // Add loading state
 const setLoading = (isLoading) => {
@@ -96,81 +104,6 @@ intervalId = setInterval(fetchData, updateTime);
 // Clean up interval when page unloads
 window.addEventListener('unload', () => clearInterval(intervalId));
 
-// Function to create a grid card
-const createQuoteCard = (quote, author) => {
-    const card = document.createElement('div');
-    card.className = 'grid-card';
-    
-    // Sanitize content
-    const sanitizeHTML = (str) => {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    };
-    
-    card.innerHTML = `
-        <p class="quote-text">${sanitizeHTML(quote)}</p>
-        <p class="quote-author">- ${sanitizeHTML(author || 'Unknown')}</p>
-    `;
-    
-    // Optimize mousemove handler
-    const handleMouseMove = debounce((e) => {
-        const rect = card.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        requestAnimationFrame(() => {
-            card.style.setProperty('--mouse-x', `${x}px`);
-            card.style.setProperty('--mouse-y', `${y}px`);
-        });
-    }, 16);
-    
-    card.addEventListener('mousemove', handleMouseMove);
-    
-    return card;
-};
-
-// Add these constants at the top of your file
-const QUOTES_PER_LOAD = 6; // Number of quotes per load
-const MAX_QUOTES = 24; // Maximum total quotes to load
-let totalLoadedQuotes = 0;
-
-// Update the loadMoreQuotes function
-const loadMoreQuotes = async () => {
-    const loadMoreBtn = document.getElementById('load-more');
-    loadMoreBtn.disabled = true;
-    loadMoreBtn.classList.add('loading');
-    
-    try {
-        const response = await fetch(`${URL}?limit=${QUOTES_PER_LOAD}`);
-        if (!response.ok) throw new Error('Network response was not ok');
-        
-        const data = await response.json();
-        const gridContainer = document.querySelector('.grid-container');
-        
-        data.forEach(quote => {
-            const card = createQuoteCard(quote.content, quote.author);
-            gridContainer.appendChild(card);
-        });
-        
-        totalLoadedQuotes += data.length;
-        
-        if (totalLoadedQuotes >= MAX_QUOTES) {
-            loadMoreBtn.textContent = 'All Quotes Loaded';
-            loadMoreBtn.disabled = true;
-            loadMoreBtn.classList.add('disabled');
-        }
-    } catch (error) {
-        console.error('Failed to load quotes:', error);
-        loadMoreBtn.textContent = 'Error - Try Again';
-    } finally {
-        loadMoreBtn.classList.remove('loading');
-        if (!loadMoreBtn.classList.contains('disabled')) {
-            loadMoreBtn.disabled = false;
-        }
-    }
-};
-
 // Use Intersection Observer for lazy loading
 const observeCards = () => {
   const observer = new IntersectionObserver((entries) => {
@@ -209,7 +142,7 @@ const updateActiveLink = () => {
     headerNavLinks.forEach(link => {
         const section = document.querySelector(link.hash);
         
-        if (
+        if (section &&
             section.offsetTop <= fromTop &&
             section.offsetTop + section.offsetHeight > fromTop
         ) {
@@ -334,4 +267,180 @@ document.head.appendChild(styleSheet);
 window.addEventListener('error', (event) => {
     console.error('Global error:', event.error);
     // Implement error reporting here
+});
+
+// Enhanced fetch quote function with timeout
+const fetchQuote = async () => {
+    const quotePlaceHolder = document.querySelector('.title');
+    if (!quotePlaceHolder || isLoading) return;
+    
+    isLoading = true;
+    quotePlaceHolder.style.opacity = '0.5';
+    
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(URL, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) throw new Error('Network response was not ok');
+        
+        const data = await response.json();
+        const quote = Array.isArray(data) ? data[0] : data;
+        
+        if (!quote || !quote.content) throw new Error('Invalid quote data');
+        
+        quotePlaceHolder.textContent = quote.content;
+    } catch (error) {
+        console.error("Failed to fetch quote:", error);
+        quotePlaceHolder.textContent = "Failed to load quote. Please try again.";
+    } finally {
+        quotePlaceHolder.style.opacity = '1';
+        isLoading = false;
+    }
+};
+
+// Enhanced load more quotes function
+let loadMoreQuotes = async () => {
+    const loadMoreBtn = document.getElementById('load-more');
+    const gridContainer = document.querySelector('.grid-container');
+    
+    if (!loadMoreBtn || !gridContainer || isLoading) return;
+    
+    isLoading = true;
+    loadMoreBtn.disabled = true;
+    loadMoreBtn.classList.add('loading');
+    
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(`${URL}?limit=${QUOTES_PER_LOAD}`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) throw new Error('Network response was not ok');
+        
+        const data = await response.json();
+        if (!Array.isArray(data)) throw new Error('Invalid data format');
+        
+        const fragment = document.createDocumentFragment();
+        
+        data.forEach(quote => {
+            if (quote && quote.content) {
+                const card = createQuoteCard(quote.content, quote.author);
+                fragment.appendChild(card);
+            }
+        });
+        
+        gridContainer.appendChild(fragment);
+        totalLoadedQuotes += data.length;
+        
+        updateLoadMoreButton(loadMoreBtn);
+    } catch (error) {
+        console.error('Failed to load quotes:', error);
+        loadMoreBtn.textContent = 'Try Again';
+        loadMoreBtn.disabled = false;
+    } finally {
+        loadMoreBtn.classList.remove('loading');
+        isLoading = false;
+    }
+};
+
+// Update load more button state
+const updateLoadMoreButton = (button) => {
+    if (totalLoadedQuotes >= MAX_QUOTES) {
+        button.textContent = 'All Quotes Loaded';
+        button.disabled = true;
+        button.classList.add('disabled');
+    } else {
+        button.textContent = 'Load More Quotes';
+        button.disabled = false;
+    }
+};
+
+// Initialize with retry mechanism
+const initializeApp = async () => {
+    let retries = MAX_RETRIES;
+    
+    while (retries > 0) {
+        try {
+            await fetchQuote();
+            await loadMoreQuotes();
+            return true;
+        } catch (error) {
+            console.error(`Initialization attempt failed. Retries left: ${retries - 1}`);
+            retries--;
+            if (retries > 0) {
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+            }
+        }
+    }
+    
+    console.error('Failed to initialize app after multiple attempts');
+    return false;
+};
+
+// Create quote card with optimized event handling
+const createQuoteCard = (quote, author) => {
+    const card = document.createElement('div');
+    card.className = 'grid-card';
+    
+    // Sanitize content
+    const sanitizeHTML = (str) => {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    };
+    
+    card.innerHTML = `
+        <p class="quote-text">${sanitizeHTML(quote)}</p>
+        <p class="quote-author">- ${sanitizeHTML(author || 'Unknown')}</p>
+    `;
+    
+    // Add touch/mouse handling
+    const handleInteraction = (e) => {
+        const rect = card.getBoundingClientRect();
+        const x = (e.clientX || e.touches[0].clientX) - rect.left;
+        const y = (e.clientY || e.touches[0].clientY) - rect.top;
+        
+        requestAnimationFrame(() => {
+            card.style.setProperty('--mouse-x', `${x}px`);
+            card.style.setProperty('--mouse-y', `${y}px`);
+        });
+    };
+    
+    if ('ontouchstart' in window) {
+        card.addEventListener('touchstart', handleInteraction, { passive: true });
+    } else {
+        card.addEventListener('mousemove', debounce(handleInteraction, 16));
+    }
+    
+    return card;
+};
+
+// Event Listeners
+document.addEventListener('DOMContentLoaded', initializeApp);
+
+// Add event listeners only if elements exist
+const newQuoteBtn = document.getElementById('new-quote');
+const loadMoreBtn = document.getElementById('load-more');
+
+if (newQuoteBtn) {
+    newQuoteBtn.addEventListener('click', () => {
+        if (!isLoading) fetchQuote();
+    });
+}
+
+if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', () => {
+        if (!isLoading) loadMoreQuotes();
+    });
+}
+
+// Clean up on page unload
+window.addEventListener('unload', () => {
+    // Clean up any resources or event listeners if needed
 });
